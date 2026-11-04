@@ -1,49 +1,51 @@
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class App {
-    public static void main(String[] args) throws Exception {
-        int porta = 12345;
+    private static final int PORT = 12345;
+    private static final ExecutorService threadPool = Executors.newCachedThreadPool();
 
-        try (ServerSocket socket = new ServerSocket(porta)) {
-            System.out.println("=== SERVIDOR INICIADO NA PORTA " + porta + " ===");
+    public static void main(String[] args) {
+        System.out.println("Iniciando o servidor RFC 862 Echo na porta " + PORT + "...");
+
+        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
             while (true) {
-                System.out.println("Aguardando um cliente se conectar...");
-                Socket socketClient = socket.accept();
-                Thread threadCliente = new Thread(() -> lidarCliente(socketClient));
-                threadCliente.start();
+                Socket clientSocket = serverSocket.accept();
+                threadPool.submit(() -> handleClient(clientSocket));
             }
-
-        } catch (Exception e) {
-            throw new Error("Cuida");
+        } catch (IOException e) {
+            System.err.println("Erro no servidor principal: " + e.getMessage());
+        } finally {
+            threadPool.shutdown();
         }
     }
 
-    private static void lidarCliente(Socket socket) {
-        byte[] buffer = new byte[1024];
-        try (Socket s = socket) {
-            InputStream entrada = s.getInputStream();
-            OutputStream saida = s.getOutputStream();
+    private static void handleClient(Socket clientSocket) {
+        byte[] buffer = new byte[4096];
+        int bytesRead;
 
-            saida.write("Conectado ao servidor multithread!\n".getBytes("UTF-8"));
-            saida.flush();
-
-            while (true) {
-                int bytesLidos = entrada.read(buffer);
-                if (bytesLidos == -1) {
-                    break;
-                }
-                String mensagem = new String(buffer, 0, bytesLidos, "UTF-8").trim();
-                String resposta = "Recebido: " + mensagem + "\n";
-                saida.write(resposta.getBytes("UTF-8"));
-                saida.flush();
+        try (
+                InputStream in = clientSocket.getInputStream();
+                OutputStream out = clientSocket.getOutputStream()) {
+            while ((bytesRead = in.read(buffer)) != -1) {
+                out.write(buffer, 0, bytesRead);
+                out.flush();
             }
-        } catch (Exception e) {
-            System.out.println("Erro na conexão do cliente: " + e.getMessage());
+            System.out.println("Cliente encerrou o envio. Fechando conexão de forma limpa.");
+
+        } catch (IOException e) {
+            System.err.println("Erro durante a comunicação com o cliente: " + e.getMessage());
         } finally {
-            System.out.println("[Servidor] Conexão finalizada para um cliente.");
+            try {
+                clientSocket.close();
+            } catch (IOException e) {
+                System.err.println("Erro ao fechar o socket do cliente: " + e.getMessage());
+            }
         }
     }
 }
